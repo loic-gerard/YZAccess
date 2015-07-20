@@ -11,9 +11,10 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-
+import java.util.Vector;
 /**
  *
  * @author lgerard
@@ -22,10 +23,14 @@ public class GraphicMainInterface  extends JFrame{
     
     private JTextArea logs;
     private GraphicActivityPanel activityPanel; 
+    private int maxLines = 50;
+    private Vector lines;
     
     public GraphicMainInterface(){
 	super();
 	
+        lines = new Vector();
+        
 	setSize(1000,755);
 	setTitle(YZAccess.appzName);
 	
@@ -72,7 +77,20 @@ public class GraphicMainInterface  extends JFrame{
     }
     
     public void writeInLog(String log){
-	logs.setText(log+"\n"+logs.getText());
+        lines.add(log);
+        if(lines.size() > maxLines){
+            lines.remove(0);
+        }
+        
+        String toadd = "";
+        for(int i = 0; i < lines.size(); i++){
+            toadd += lines.get(i)+"\n";
+        }
+        
+        logs.setText(toadd);
+        
     }
+    
+    
     
 }

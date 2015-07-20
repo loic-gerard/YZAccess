@@ -29,6 +29,8 @@ public class KDCCommunication extends Thread{
     
     private GraphicPortCom interf;
     
+    private boolean toOpen = true;
+    
     public KDCCommunication(String portCOM, GraphicPortCom in_interf){
 	//Initialisation des variables
 	port = portCOM;
@@ -36,17 +38,31 @@ public class KDCCommunication extends Thread{
 	interf = in_interf;
     }
     
-    public void init(){
-	log("Debut d'initialisation d'un KDC");
+    public GraphicPortCom getInterface(){
+        return interf;
+    }
+    
+    private void open(){
+        serialPort = null;
+        portIdentifier = null;
+        inStream = null;
+        outStream = null;
+        
+        interf.setOrange();
+	interf.setActivite("Initialisation..."); 
+       
+        log("Debut d'initialisation d'un KDC");
 	
 	//initialisation du driver
 	log("Initialisation du driver portCOM Windows : WAIT");
+        interf.setActivite("Initialisation du port COM..."); 
 	Win32Driver w32Driver = new Win32Driver();
 	w32Driver.initialize();
 	log("Initialisation du driver portCOM Windows : OK");
 	
 	//récupération de l'identifiant du port
 	log("Recuperation de l'identifiant du port : WAIT");
+        interf.setActivite("Récupération de l'identifiant port COM..."); 
 	try {
 	    portIdentifier= CommPortIdentifier.getPortIdentifier(port);
 	} catch (Exception e) {
@@ -56,15 +72,25 @@ public class KDCCommunication extends Thread{
 	
 	//ouverture du port
 	log("Ouverture du port : WAIT");
-	try {
-	    serialPort = (SerialPort) portIdentifier.open("KDC-"+port, 30000);
-	} catch (Exception e) {
-	    e.printStackTrace();
-	}
+        interf.setActivite("Ouverture du port COM..."); 
+        while(serialPort == null){
+            try {
+                serialPort = (SerialPort) portIdentifier.open("KDC-"+port, 30000);
+            } catch (Exception e) {
+                
+                e.printStackTrace();
+                try{
+                Thread.sleep(500);
+                }catch(Exception e2){
+                    
+                }
+            }
+        }
 	log("Ouverture du port : OK");
 	
 	//règle les paramètres de la connexion
 	log("Réglage des paramètres de la connexion du port : WAIT");
+        interf.setActivite("Réglages des paramètres du port..."); 
 	try {
 	    serialPort.setSerialPortParams(
 		9600,
@@ -77,6 +103,7 @@ public class KDCCommunication extends Thread{
 	log("Réglage des paramètres de la connexion du port : OK");
 	
 	//récupération du flux de lecture et écriture du port
+        interf.setActivite("Ouverture du flux..."); 
 	log("Ouverture des flux de lecture/ecriture sur port : WAIT");
 	try {
 	    outStream = serialPort.getOutputStream();
@@ -87,11 +114,20 @@ public class KDCCommunication extends Thread{
 	log("Ouverture des flux de lecture/ecriture sur port : OK");
 	
 	log("Fin d'initialisation d'un KDC : SUCCES");
-	
-	interf.setOrange();
-	interf.setActivite("<html>connect to KDC<br>Please wait...</html>");
-	start();
-	sendCommand("GMTCONNECTE A YZEURE ACCESS@");
+        
+        interf.setOrange();
+	interf.setActivite("Connexion au KDC...");
+        
+        sendCommand("GMTPRET@");
+    }
+    
+    public void close(){
+        interf.setOrange();
+        interf.setActivite("Déconnecté");
+        this.interrupt();
+        this.stop();
+        serialPort.close();
+        interf.setClosed();
     }
     
     public void sendCommand(String cmd){
@@ -133,7 +169,7 @@ public class KDCCommunication extends Thread{
 		    if(i == (cmd.length() - 1)){
 			log(c.getCommand()+" : WAIT FOR TERMINAL RESPONSE");
 		    }else{
-			pause(100);
+			pause(20);
 		    }
 		}
 
@@ -157,6 +193,11 @@ public class KDCCommunication extends Thread{
     }
     
     public void run(){
+        if(toOpen){
+            toOpen = false;
+            open();
+        }
+        
 	try{
 	    while(1 == 1){
 		int c = inStream.read();
@@ -172,8 +213,9 @@ public class KDCCommunication extends Thread{
 			//Si première connexion. KDC bien reconnu
 			if(!connected){
 			    connected = true;
-			    interf.setGreen();
-			    interf.setActivite("Ready !");
+			    interf.setWhite();
+			    interf.setActivite("Prêt !");
+                            interf.setOpened();
 			}
 
 			commandStack.remove(0);
@@ -190,9 +232,14 @@ public class KDCCommunication extends Thread{
 			readed += ca;
 		    }
 		}else{
-		    readed += ca;
+                    if(ca != 13 && ca != 10 && ca != 64){
+                        readed += ca;
+                    }
 		    if(ca == 13){
 			log("CODE BARRE RECU : "+readed);
+                        interf.setActivite(readed);
+                        
+                        BilletManager.scanProcess(this, interf, readed);
 			readed = "";
 		    }
 		}
@@ -210,5 +257,47 @@ public class KDCCommunication extends Thread{
     
     public String getPort(){
 	return port;
+    }
+    
+    
+    public void kdcCmd_message(String line1){
+        int charsByLine = 4;
+        String bline1 = "";
+        for(int i = 0; i < charsByLine; i++){
+            if(line1.length() >= (i + 1)){
+                bline1 += line1.charAt(i);
+            }else{
+                bline1 += " ";
+            }
+        }
+        
+        
+        sendCommand("GMT"+bline1+"@");
+    }
+    
+    public void kdcCmd_redLight(){
+        kdcCmd_clearLights();
+        sendCommand("GML3#@");
+    }
+    
+    public void kdcCmd_orangeLight(){
+        sendCommand("GML5#@");
+    }
+    
+    public void kdcCmd_greenLight(){
+        kdcCmd_clearLights();
+        sendCommand("GML1#@");
+    }
+    
+    public void kdcCmd_clearLights(){
+        sendCommand("GML4#@");
+    }
+    
+    public void kdcCmd_errorBeep(){
+        sendCommand("GMB0@");
+    }
+    
+    public void kdcCmd_okBeep(){
+        sendCommand("GMB1@");
     }
 }
